@@ -2,31 +2,20 @@ import numpy as np
 import torch
 import matplotlib.pyplot as plt
 
-days = 32
-discretization = 1
-obs_per_day = 1
-nobs = days * obs_per_day
 N = 100000.
-X = np.arange(0, days, 1. / (obs_per_day * discretization))
-i0 = 50
-e0, i0, d0 = 100., 50., 50.
-T = 2
-parameter_value = [1.8, 0.1, 0.1, 0.05]
-std = [1., 0.02, 0, 0.025]
-true_time = np.arange(0, days, 1. / (obs_per_day * 1000))
-tmp = np.linspace(0, 2 * T * np.pi, 32000)
-true_re = parameter_value[0] - std[0] * np.cos(tmp)
-true_ve = parameter_value[1]- std[1] * np.cos(tmp)
-true_vi = parameter_value[2] 
-true_pd = parameter_value[3] + std[3] * np.cos(tmp)
 
-def true_data(true_re, true_ve, true_vi, true_pd, days, obs_per_day, state0=[N, e0, i0, d0], linspace=1000):
+def true_data(days=32, obs_per_day=1, state0=[100000., 100., 50., 50.], linspace=1000):
     """
     params: parameter: [beta, ve, vi, pd]
     """
     # check input
-    # [ S, E, I, D, cfr0]
-    freq = 1. / discretization
+    parameter_value = [1.8, 0.1, 0.1, 0.05]
+    std = [1., 0.02, 0, 0.025]
+    tmp = np.linspace(0, 2 * T * np.pi, 32000)
+    true_re = parameter_value[0] - std[0] * np.cos(tmp)
+    true_ve = parameter_value[1]- std[1] * np.cos(tmp)
+    true_vi = parameter_value[2] 
+    true_pd = parameter_value[3] + std[3] * np.cos(tmp)
     nFull = int(days * obs_per_day)
     step_size = 1. / (linspace * obs_per_day)
     state_ls = np.ones((nFull * linspace, 4))
@@ -44,13 +33,18 @@ def true_data(true_re, true_ve, true_vi, true_pd, days, obs_per_day, state0=[N, 
     states = state_ls[::linspace]
     return states
     
-def gen_data(true_re, true_ve, true_vi, true_pd, days, obs_per_day, state0=[N, 100, 50, 50], linspace=1000):
+def gen_data(days=32, obs_per_day=1, state0=[100000., 100, 50, 50], linspace=1000):
     """
     params: parameter: [beta, ve, vi, pd]
     """
     # check input
-    # [ S, E, I, D, cfr0]
-    freq = 1. / discretization
+    parameter_value = [1.8, 0.1, 0.1, 0.05]
+    std = [1., 0.02, 0, 0.025]
+    tmp = np.linspace(0, 2 * T * np.pi, 32000)
+    true_re = parameter_value[0] - std[0] * np.cos(tmp)
+    true_ve = parameter_value[1]- std[1] * np.cos(tmp)
+    true_vi = parameter_value[2] 
+    true_pd = parameter_value[3] + std[3] * np.cos(tmp)
     nFull = int(days * obs_per_day)
     step_size = 1. / (linspace * obs_per_day)
     state_ls = np.ones((nFull * linspace, 4))
