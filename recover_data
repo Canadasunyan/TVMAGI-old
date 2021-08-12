@@ -1,0 +1,44 @@
+def recover_data(beta, ve, pd, vi, state0, days=32, obs_per_day=1, linspace=1000, mode='Linear'):
+    """
+    params: parameter: [beta, ve, vi, pd]
+    """
+    # check input
+    # [ S, E, I, D, cfr0]
+    freq = 1. / discretization
+    nFull = int(days * obs_per_day)
+    step_size = 1. / (linspace * obs_per_day)
+    state_ls = np.ones((nFull * linspace, 4))
+    state_ls[0][0] = state0[0]
+    state_ls[0][1] = state0[1]
+    state_ls[0][2] = state0[2]
+    state_ls[0][3] = state0[3]
+    # Use linear interpolation for theta
+    if mode == 'Linear': 
+        x_initial = np.linspace(0, 1000, beta.shape[0])
+        x_interp = np.linspace(0, 1000, 32000)
+        beta_interp = np.interp(x_interp, x_initial, beta)
+        ve_interp = np.interp(x_interp, x_initial, ve)
+        pd_interp = np.interp(x_interp, x_initial, pd)
+    # Use Gaussian interpolation for theta    
+    elif mode == 'Gaussian':
+        from scipy.interpolate import Rbf
+        x = np.linspace(0, 100, beta.shape[0])
+        x_interp = np.linspace(0, 100, 32000)
+        rbf_beta = Rbf(x, beta, epsilon=10, function='gaussian')
+        rbf_ve = Rbf(x, ve, epsilon=10, function='gaussian')
+        rbf_pd = Rbf(x, pd, epsilon=10, function='gaussian')
+        beta_interp = rbf_beta(x_interp) 
+        ve_interp = rbf_ve(x_interp)
+        pd_interp = rbf_pd(x_interp)
+    else:
+        raise ValueError
+        
+        
+    for i in range(1, linspace * nFull):
+        index = i - 1
+        state_ls[i][0] = state_ls[i - 1][0] - step_size * beta_interp[index] * state_ls[i - 1][2] * state_ls[i - 1][0] / N
+        state_ls[i][1] = state_ls[i - 1][1] + step_size * beta_interp[index] * state_ls[i - 1][2] * state_ls[i - 1][0] / N - step_size * ve_interp[index] * state_ls[i - 1][1]
+        state_ls[i][2] = state_ls[i - 1][2] + step_size * ve_interp[index] * state_ls[i - 1][1] - step_size * state_ls[i - 1][2] * vi
+        state_ls[i][3] = state_ls[i - 1][3] + step_size * state_ls[i - 1][2] * vi * pd_interp[index]
+    states = state_ls[::linspace]
+    return states
