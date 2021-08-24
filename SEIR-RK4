@@ -50,9 +50,6 @@ def RungeKutta_SEIR(x_init, beta, ve, vi, pd, yobs):
     return torch.sum(mse)
 
 
-
-
-
 def RK_solver(use_data_idx, days=32, discretization=1):
     start_time = time.time()
     yobs = observations[use_data_idx]
@@ -72,13 +69,13 @@ def RK_solver(use_data_idx, days=32, discretization=1):
         optimizer.zero_grad()
         # compute loss function
         loss = RungeKutta_SEIR(x_init, beta, ve, vi, pd, torch.tensor(yobs))
-        cur_loss = loss.item()
         loss.backward()
         optimizer.step()
         lr_scheduler.step()
         if epoch % 100 == 0:
             print(epoch, loss.item())
-            if loss.item() - cur_loss > -0.001 and loss.item() - cur_loss < 0.001:
+            if torch.isnan(loss) == False and loss.item() - cur_loss > -0.001 and loss.item() - cur_loss < 0.001:
+                print(cur_loss, loss.item())
                 break
             cur_loss = loss.item()
             
@@ -97,7 +94,7 @@ def RK_solver(use_data_idx, days=32, discretization=1):
 from multiprocessing import Pool
 
 if __name__ ==  '__main__': 
-    
+    torch.set_num_threads(1)
     observations = np.load('observations.npy')
     N = 100000.
     pool = Pool(processes=2)
