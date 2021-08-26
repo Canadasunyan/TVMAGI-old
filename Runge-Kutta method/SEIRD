@@ -97,7 +97,7 @@ if __name__ ==  '__main__':
     torch.set_num_threads(1)
     observations = np.load('observations.npy')
     N = 100000.
-    pool = Pool(processes=2)
-    results = pool.map(RK_solver, range(2))
+    pool = Pool(processes=50)
+    results = pool.map(RK_solver, range(100))
     pool.close()
     pool.join()
