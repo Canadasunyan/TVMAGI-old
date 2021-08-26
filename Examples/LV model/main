@@ -400,10 +400,10 @@ def TVMAGI_solver(use_data_idx, fOde=fOde, fOdeDx=fOdeDx, fOdeDtheta=fOdeDtheta,
         pickle.dump(hyperparamList, fp)
         
     X = np.arange(0, days, 1./obs_per_day)
-    alpha = 0.6 + 0.3 * np.cos(6.28 * X / 10)
+    true_alpha = 0.6 + 0.3 * np.cos(6.28 * X / 10)
     beta = 0.75 
     delta = 1. 
-    gamma = 1 + 0.1 * np.sin(6.28 * X / 10)
+    true_gamma = 1 + 0.1 * np.sin(6.28 * X / 10)
     figsize(10, 2)
     plt.subplot(1, 2, 1)
     plt.plot(param_ls[:, 0])
