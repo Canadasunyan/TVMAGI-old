@@ -9,6 +9,14 @@ from arma import ode_system, solve_magi
 from arma import matrix
 import time
 import pickle
+from multiprocessing import Pool
+
+%matplotlib inline
+from IPython.core.pylabtools import figsize # import figsize
+#figsize(12.5, 4) # 设置 figsize
+plt.rcParams['savefig.dpi'] = 200 #图片像素
+plt.rcParams['figure.dpi'] = 200 #分辨率
+torch.set_num_threads(1)
 
 
 def fOde(theta, x):
@@ -68,23 +76,120 @@ def fOdeDtheta(theta, x):
 def copy_mat(arma_mat):
     return np.copy(matrix(arma_mat).reshape([-1])).reshape([arma_mat.n_rows, arma_mat.n_cols])
 
+  
+def fOdeTorch(theta, x, constant_param_ls):
+    """
+    theta: list[4]: beta, ve, vi, pd
+    x: array(n, 4)
+    r: array(n, 2)
+    """
+    rabbit = x[:, 0]
+    fox = x[:, 1]
+    logRdt = theta[:, 0] * rabbit - constant_param_ls[0] * rabbit * fox
+    logFdt = constant_param_ls[1] * rabbit * fox - theta[:, 1] * fox
+    return torch.stack([logRdt, logFdt], axis=1)
 
+
+def pointwisethetasigmallikTorch(xlatent, theta, time_constant_param_ls, sigma, inferred_theta, ydata, CovAllDimensionsPyList, fOdeTorch,
+                                 priorTemperature):
+    # length of observed y (t)
+    n = ydata.shape[0]
+    
+    pdimension = ydata.shape[1]
+    thetadimension = theta.shape[1]
+    sigmaSq = torch.pow(sigma, 2)
+    fderiv = fOdeTorch(theta, xlatent, time_constant_param_ls)
+    res = torch.zeros([pdimension, 3]).double()
+    fitDerivError = torch.zeros([n, pdimension]).double()
+    nobs = torch.zeros([pdimension]).double()
+    fitLevelErrorSumSq = torch.zeros([pdimension]).double()
+    for vEachDim in range(pdimension):
+        fitDerivError[:, vEachDim] = fderiv[:, vEachDim]
+        fitDerivError[:, vEachDim] -= CovAllDimensionsPyList[vEachDim]['mphi'] @ xlatent[:, vEachDim]
+        nobs[vEachDim] = torch.sum(torch.isfinite(ydata[:, vEachDim]))
+        obsIdx = torch.isfinite(ydata[:, vEachDim])
+        fitLevelErrorSumSq[vEachDim] = torch.sum(torch.square(xlatent[obsIdx, vEachDim] - ydata[obsIdx, vEachDim]))
+    res[:, 0] = -0.5 * fitLevelErrorSumSq / sigmaSq - torch.log(sigma + 0.001) * nobs
+    res[:, 0] /= priorTemperature[2]
+    KinvfitDerivError = torch.zeros([n, pdimension]).double()
+    CinvX = torch.zeros([n, pdimension]).double()
+    for vEachDim in range(pdimension):
+        # inverse of K
+        KinvfitDerivError[:, vEachDim] = CovAllDimensionsPyList[vEachDim]['Kinv'] @ fitDerivError[:, vEachDim]
+        # inverse of Cd
+        CinvX[:, vEachDim] = CovAllDimensionsPyList[vEachDim]['Cinv'] @ xlatent[:, vEachDim]
+    res[:, 1] = -0.5 * torch.sum(fitDerivError * KinvfitDerivError, dim=0) / priorTemperature[0]
+    #  prior distriobution of X
+    res[:, 2] = -0.5 * torch.sum(xlatent * CinvX, dim=0) / priorTemperature[1]
+    return torch.sum(res)
+
+
+
+
+def MaternKernel(d, phi_1, phi_2):
+    """
+    construct a kernel given time points and hyper parameters
+    """
+    a = torch.square(phi_1) * (
+            1. + np.sqrt(5) * d / phi_2 + 5. * torch.square(d) / (3. * torch.square(phi_2))) * torch.exp(
+        -np.sqrt(5) * d / phi_2)
+    return a.double()
+
+
+def kernelllik(phi_1, phi_2, sigma, y, d_matrix, phi1_lb=0.1, phi2_lb=10., sigma_lb = 0.05):
+    """
+    optimize the kernel hyperparameters by maximizing marginal likelihood
+    """
+    phi_1_bounded = torch.clamp(phi_1, min=phi1_lb)
+    phi_2_bounded = torch.clamp(phi_2, min=phi2_lb)
+    sigma_bounded = torch.clamp(sigma, min=sigma_lb)
+    K = MaternKernel(d_matrix, phi_1, phi_2)
+    K += torch.square(sigma) * torch.eye(y.shape[0]).double()
+    return -y.shape[0] * np.log(np.sqrt(2 * np.pi)) - 0.5 * y @ torch.inverse(K) @ y - 0.5 * torch.logdet(K) - 1e8 * torch.square(phi_1 - phi_1_bounded) - 1e6 * torch.square(phi_2 - phi_2_bounded) - 1e6 * torch.square(sigma - sigma_bounded)
     
 
-obs_per_day = 12
-discretization=1
-theta_lowerbound=np.array([0., 0., 0., 0.])
-theta_upperbound=np.array([np.inf, np.inf, np.inf, np.inf])
-MAGI_niter=15001
-param_names = ['alpha', 'beta', 'delta', 'gamma']
-is_time_varying=[True, False, False, True]
-pointwise_niter=150000
-kernel_niter=20000
-TVMAGI_niter=150000
-phi1_lb_ls=np.array([0.1, 0.1])
-phi2_lb_ls=np.array([10, 10])
-use_trajectory='inferred'
-learning_rate=np.array([1e-5, 1e-3, 1e-4])
+    
+    
+def xthetasigmallikTorch(xlatent, theta, time_constant_param_ls, sigma, inferred_theta, ydata, CovAllDimensionsPyList, fOdeTorch,
+                         priorTemperature,
+                         KinvthetaList):
+    # length of observed y (t)
+    n = ydata.shape[0]
+    pdimension = ydata.shape[1]
+    thetadimension = theta.shape[1]
+    sigmaSq = torch.pow(sigma, 2)
+    fderiv = fOdeTorch(theta, xlatent, time_constant_param_ls)
+    res = torch.zeros([pdimension, 3]).double()
+    res_theta = torch.zeros(thetadimension).double()
+    res2 = torch.zeros(1).double()
+    fitDerivError = torch.zeros([n, pdimension]).double()
+    nobs = torch.zeros([pdimension]).double()
+    fitLevelErrorSumSq = torch.zeros([pdimension]).double()
+    for vEachDim in range(pdimension):
+        fitDerivError[:, vEachDim] = fderiv[:, vEachDim]
+        fitDerivError[:, vEachDim] -= CovAllDimensionsPyList[vEachDim]['mphi'] @ xlatent[:, vEachDim]
+        nobs[vEachDim] = torch.sum(torch.isfinite(ydata[:, vEachDim]))
+        obsIdx = torch.isfinite(ydata[:, vEachDim])
+        fitLevelErrorSumSq[vEachDim] = torch.sum(torch.square(xlatent[obsIdx, vEachDim] - ydata[obsIdx, vEachDim]))
+    res[:, 0] = -0.5 * fitLevelErrorSumSq / sigmaSq - torch.log(sigma + 0.0001) * nobs
+    res[:, 0] /= priorTemperature[2]
+    KinvfitDerivError = torch.zeros([n, pdimension]).double()
+    CinvX = torch.zeros([n, pdimension]).double()
+    for vEachDim in range(pdimension):
+        # inverse of K
+        KinvfitDerivError[:, vEachDim] = CovAllDimensionsPyList[vEachDim]['Kinv'] @ fitDerivError[:, vEachDim]
+        # inverse of Cd
+        CinvX[:, vEachDim] = CovAllDimensionsPyList[vEachDim]['Cinv'] @ xlatent[:, vEachDim]
+    for thetaEachDim in range(thetadimension):
+        res_theta[thetaEachDim] = -0.5 * torch.sum(
+            (theta[:, thetaEachDim] - inferred_theta[thetaEachDim]) @ KinvthetaList[thetaEachDim] @ (
+                    theta[:, thetaEachDim] - inferred_theta[thetaEachDim]))
+    res[:, 1] = -0.5 * torch.sum(fitDerivError * KinvfitDerivError, dim=0) / priorTemperature[0]
+    res[:, 2] = -0.5 * torch.sum(xlatent * CinvX, dim=0) / priorTemperature[1]
+
+    return torch.sum(res) + torch.sum(res_theta)   
+    
+    
     
     
 def TVMAGI_solver(use_data_idx, fOde=fOde, fOdeDx=fOdeDx, fOdeDtheta=fOdeDtheta,
@@ -97,9 +202,9 @@ def TVMAGI_solver(use_data_idx, fOde=fOde, fOdeDx=fOdeDx, fOdeDtheta=fOdeDtheta,
                   is_time_varying=[True, False, False, True], 
                   use_trajectory='inferred', 
                   learning_rate=np.array([1e-4, 1e-3, 1e-5]), 
-                  n_iter = [15001, 80000, 15000, 60000],
+                  n_iter = [15001, 200000, 15000, 200000],
                   phi1_lb_ls=np.array([0.1, 0.1]), 
-                  phi2_lb_ls=np.array([10., 10.]), 
+                  phi2_lb_ls=np.array([5., 5.]), 
                   sigma_lb_ls = np.array([0.01, 0.01])):
     
     yobs = observations[use_data_idx]
@@ -143,7 +248,7 @@ def TVMAGI_solver(use_data_idx, fOde=fOde, fOdeDx=fOdeDx, fOdeDtheta=fOdeDtheta,
         kernel="generalMatern",
         nstepsHmc=100,
         burninRatioHmc=0.5,
-        niterHmc=MAGI_niter,
+        niterHmc=n_iter[0],
         stepSizeFactorHmc=0.01,
         nEpoch=1,
         bandSize=40,
@@ -159,7 +264,7 @@ def TVMAGI_solver(use_data_idx, fOde=fOde, fOdeDx=fOdeDx, fOdeDtheta=fOdeDtheta,
     # dimension of theta
     thetaId = range(np.max(xId) + 1, np.max(xId) + theta_dim + 1)
     sigmaId = range(np.max(thetaId) + 1, np.max(thetaId) + yFull.shape[1] + 1)
-    burnin = int(MAGI_niter * 0.5)
+    burnin = int(n_iter[0] * 0.5)
     xsampled = samplesCpp[xId, (burnin + 1):]
     xsampled = xsampled.reshape([yFull.shape[1], yFull.shape[0], -1])
     CovAllDimensionsPyList = []
@@ -196,22 +301,24 @@ def TVMAGI_solver(use_data_idx, fOde=fOde, fOdeDx=fOdeDx, fOdeDtheta=fOdeDtheta,
     sigma_torch = torch.tensor(inferred_sigma, requires_grad=True, dtype=torch.double)
     time_constant_param_ls = []
     for thetaEachDim in range(theta_dim):
-        if is_time_varying[thetaEachDim] == 0:
+        if is_time_varying[thetaEachDim] == False:
             param_name = param_names[thetaEachDim]
-            locals()[param_name] = torch.tensor([inferred_theta[thetaEachDim]], requires_grad=True, dtype=torch.double)
+            print(param_name)
+            globals()[param_name] = torch.tensor([inferred_theta[thetaEachDim]], requires_grad=True, dtype=torch.double)
+            print(eval(param_name))
             time_constant_param_ls.append(eval(param_name))
 
     ydata = torch.from_numpy(yFull).double()
     priorTemperature = torch.tensor([discretization, discretization, 1.0])  # ?
     pointwise_optimizer = torch.optim.Adam([pointwise_xlatent_torch, pointwise_theta_torch, sigma_torch] + time_constant_param_ls, lr=1e-4)  # , weight_decay = 1.0
     pointwise_lr_scheduler = torch.optim.lr_scheduler.StepLR(pointwise_optimizer, step_size=10000, gamma=0.5)
-    cur_loss = 1e12
+    cur_loss = 1e20
     for epoch in range(n_iter[1]):
         pointwise_optimizer.zero_grad()
         # compute loss function
         llik = pointwisethetasigmallikTorch(pointwise_xlatent_torch, pointwise_theta_torch, time_constant_param_ls, sigma_torch,
                                             TV_theta_mean, ydata, CovAllDimensionsPyList, fOdeTorch,
-                                            priorTemperature, obs_per_day)
+                                            priorTemperature)
         new_loss = -llik
         if epoch % 200 == 0:
             print(epoch, new_loss.item())
@@ -222,7 +329,6 @@ def TVMAGI_solver(use_data_idx, fOde=fOde, fOdeDx=fOdeDx, fOdeDtheta=fOdeDtheta,
         new_loss.backward()
         pointwise_optimizer.step()
         pointwise_lr_scheduler.step()
-
 
    # Kernel estimation ########################################
     
@@ -265,7 +371,7 @@ def TVMAGI_solver(use_data_idx, fOde=fOde, fOdeDx=fOdeDx, fOdeDtheta=fOdeDtheta,
     TVMAGI_sigma_torch = torch.tensor(inferred_sigma, requires_grad=True, dtype=torch.double)
     TVMAGI_optimizer = torch.optim.Adam([TVMAGI_xlatent_torch, TVMAGI_theta_torch, TVMAGI_sigma_torch] + time_constant_param_ls, lr=1e-5)
     lr_scheduler = torch.optim.lr_scheduler.StepLR(TVMAGI_optimizer, step_size=10000, gamma=0.9)
-    cur_loss = 1e12
+    cur_loss = 1e20
     for epoch in range(n_iter[3]):
         TVMAGI_optimizer.zero_grad()
         # compute loss function
@@ -275,7 +381,7 @@ def TVMAGI_solver(use_data_idx, fOde=fOde, fOdeDx=fOdeDx, fOdeDtheta=fOdeDtheta,
         loss = -llik
         if epoch % 500 == 0:
             print(epoch, loss.item())
-            if torch.isnan(loss) == False and loss - cur_loss > -0.01 and loss - cur_loss < 0.01:
+            if torch.isnan(loss) == False and loss.item() - cur_loss > -0.001 and loss.item() - cur_loss < 0.001:
                 break
             cur_loss = loss.item()
         loss.backward()
@@ -312,12 +418,11 @@ def TVMAGI_solver(use_data_idx, fOde=fOde, fOdeDx=fOdeDx, fOdeDtheta=fOdeDtheta,
 
     
 
-# from multiprocessing import Pool
 
 if __name__ ==  '__main__': 
+    torch.set_num_threads(1)
     observations = np.load('LV observations.npy')
-#     pool = Pool(processes=50)
-#     results = pool.map(TVMAGI_solver, range(100))
-#     pool.close()
-#     pool.join()
-    TVMAGI_solver(1)
+    pool = Pool(processes=50)
+    results = pool.map(TVMAGI_solver, range(100))
+    pool.close()
+    pool.join()
