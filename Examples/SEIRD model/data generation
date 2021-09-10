@@ -65,7 +65,6 @@ def gen_data(days=32, obs_per_day=1, state0=[100000., 100, 50, 50], linspace=100
     return np.log(states)
 
 observations = np.zeros((100, 32, 4))
-yobs = gen_data(true_re, true_ve, true_vi, true_pd, days, obs_per_day)
 for i in range(100):
     observations[i] = gen_data(true_re, true_ve, true_vi, true_pd, days, obs_per_day).copy()
     
