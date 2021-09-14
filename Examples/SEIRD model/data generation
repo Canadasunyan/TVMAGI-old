@@ -41,6 +41,7 @@ def gen_data(days=32, obs_per_day=1, state0=[100000., 100, 50, 50], linspace=100
     # check input
     parameter_value = [1.8, 0.1, 0.1, 0.05]
     std = [1., 0.02, 0, 0.025]
+    T = 2
     tmp = np.linspace(0, 2 * T * np.pi, 32000)
     true_re = parameter_value[0] - std[0] * np.cos(tmp)
     true_ve = parameter_value[1]- std[1] * np.cos(tmp)
