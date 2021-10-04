@@ -69,4 +69,4 @@ observations = np.zeros((100, 32, 4))
 for i in range(100):
     observations[i] = gen_data().copy()
     
-np.save('SEIRD observations.npy', observations)
+np.save('SEIRD_observations.npy', observations)
