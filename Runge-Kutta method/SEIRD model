@@ -62,7 +62,7 @@ def RK_solver(use_data_idx, days=32, discretization=1):
     vi = torch.tensor(0.1, requires_grad=True, dtype = torch.float64)
     optimizer = torch.optim.Adam([x_init, beta, ve, vi, pd], lr=1e-4)  # , weight_decay = 1.0
     lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10000, gamma=0.9)
-    cur_loss = 1e12
+    cur_loss = float('inf')
     for epoch in range(1000000):
         if epoch % 5 == 0:
             print(epoch)
