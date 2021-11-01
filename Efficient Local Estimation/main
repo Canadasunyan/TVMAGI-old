@@ -4,28 +4,64 @@ import scipy
 import matplotlib.pyplot as plt
 
 
+days = 100  
+obs_per_day = 1
+nobs = days * obs_per_day
+linspace = 1000
+X = np.arange(0, days, 1./(obs_per_day * linspace))
+true_lambda = 36.
+true_rho = 0.108 
+k = 5e-4
+true_gamma = np.cos(3.14 * X / 500)
+true_delta = 0.1
+N = 1000.
+c = 3.5
 
-h1 = 30
-p = 2
-q = 1
-h2 = 20
+
+def true_data(true_lambda, true_rho, true_gamma, true_delta, days, obs_per_day, state0=[350., 20., 1200.],N=N, k=k, c=c, linspace=1000, noise=True):
+    """
+    generate data using pre-set parameters 
+    """
+    # check input
+    # [ S, E, I, D, cfr0]
+    nobs = days
+    step_size = 1. / (linspace * obs_per_day)
+    state_ls = np.ones((days * linspace * obs_per_day, 3))
+    state_ls[0] = state0.copy()
+    for i in range(1, linspace * days * obs_per_day):
+        index = i - 1
+        state_ls[i][0] = state_ls[i - 1][0] + step_size * (true_lambda - true_rho * state_ls[i - 1][0] - k * (1-true_gamma[index]) * state_ls[i - 1][0] * state_ls[i - 1][2])
+        state_ls[i][1] = state_ls[i - 1][1] + step_size * (k * (1-true_gamma[index]) * state_ls[i - 1][0] * state_ls[i - 1][2] - true_delta * state_ls[i - 1][1])
+        state_ls[i][2] = state_ls[i - 1][2] + step_size * (N * true_delta * state_ls[i - 1][1] - c * state_ls[i - 1][2]) 
+    states = state_ls[::obs_per_day * linspace]
+
+    return states[:, 0], state_ls[:, 1], np.log(states[:, 2])
 
 
-def W(t, h=h1):
-    m = np.maximum(0, 0.75 * (1 - ((t - np.arange(1, days + 1, 1)) / h) ** 2) / h)
+Tt, It, true_x = true_data(true_lambda, true_rho, true_gamma, true_delta, days, obs_per_day)
+
+
+It_diff = np.zeros(100)
+for i in range(100):
+    It_diff[i] = (It[1000 * i + 1] - It[1000 * i]) * 1000
+    
+true_a = -N * It_diff + Tt * (N * k * (1-true_gamma[::1000]) * np.exp(true_x))
+
+def W(t, h, days=100):
+    m = np.maximum(0, 0.75 * (1 - ((t - np.arange(0, days, 1)) / h) ** 2) / h)
     return np.diag(m)
 
-def Xp(t, p=p, days=100):
+def Xp(t, p, days=100):
     X = np.zeros((days, p + 1))
     for i in range(p + 1):
-        X[:, i] = (np.arange(1, days + 1, 1) - t) ** i
+        X[:, i] = (np.arange(0, days, 1) - t) ** i
     return X
 
-def beta_hat(t, yobs=yobs):
-    return np.linalg.inv(Xp(t).T.dot(W(t)).dot(Xp(t))).dot(Xp(t).T).dot(W(t)).dot(yobs)
+def beta_hat(t, yobs, p, h):
+    return np.linalg.inv(Xp(t, p).T.dot(W(t, h)).dot(Xp(t, p))).dot(Xp(t, p).T).dot(W(t, h)).dot(yobs)
     
     
-def Z(t, q=q): 
+def Z(t, q): 
     global Tt
     Z = np.zeros((days, 2 * (q + 1)))
     for i in range(q + 1):
@@ -34,24 +70,68 @@ def Z(t, q=q):
         Z[:, i] = Tt * (np.arange(1, days + 1, 1) - t) ** (i - q - 1)  
     return Z
 
-def e(q=q):
+def e(q):
     e = np.zeros((2, 2 * (q + 1)))
     e[0, 0] = 1
     e[1, q + 1] = 1
     return e
 
-U = np.zeros((days, p + 1))
-for i in range(days):
-    U[i] = beta_hat(i).reshape(1, -1)
-    
-def a(t):
-    return e().dot(np.linalg.inv(Z(t).T.dot(W(t, h=h2)).dot(Z(t)))).dot(Z(t).T).dot(W(t, h=h2)).dot(U[:, 1] + 3.5 * U[:, 0])
 
-a1_ls = np.zeros(100)
-a2_ls = np.zeros(100)
-for t in range(100):
-    tmp = a(t)
-    a1_ls[t] = tmp[0]
-    a2_ls[t] = tmp[1]
     
-plt.plot(a2_ls * Tt + a1_ls)
+def a(t, yobs, q, h1, h2, p1 = 1, p2 = 2):
+    U1 = np.zeros((days, p1 + 1))
+    for i in range(days):
+        U1[i] = beta_hat(i, yobs, p1, h1).reshape(1, -1)
+    U2 = np.zeros((days, p2 + 1))
+    for i in range(days):
+        U2[i] = beta_hat(i, yobs, p2, h1).reshape(1, -1)
+    return e(q).dot(np.linalg.inv(Z(t, q).T.dot(W(t, h=h2)).dot(Z(t, q)))).dot(Z(t, q).T).dot(W(t, h=h2)).dot(U2[:, 1] + 3.5 * U1[:, 0])
+
+def recover_data(a, state0, linspace=100, days=100, obs_per_day=1):
+    """
+    params: parameter: [re, pe, pi, pd]
+    """
+    # check input
+    # [ S, E, I, D, cfr0]
+    step_size = 1. / linspace
+    state_ls = np.ones(days * linspace)
+    state_ls[0] = state0
+    # Use Gaussian interpolation for theta    
+    a_interp = np.interp(np.arange(0, 100, 1 / linspace), np.arange(0, 100, 1), a)
+    for i in range(1, linspace * days):
+        index = i - 1
+        state_ls[i] = state_ls[i - 1] + step_size * (
+                     a_interp[index] - 3.5 * state_ls[i - 1]) 
+
+    return state_ls[::linspace]
+
+data = np.load('G:/HIV observations.npy')
+Tt = data[0][:, 1]
+yobs = np.zeros((100, 100))
+for i in range(100):
+    yobs[i] = np.exp(data[i, :, 0]) 
+    
+
+
+
+p = 1
+q = 1
+h1 = 6
+h2 = 18
+
+all_a1 = np.zeros((100, 100))
+all_a2 = np.zeros((100, 100))
+all_a = np.zeros((100, 100))
+for i in range(100):
+    print(i)
+    for t in range(100):
+        tmp = a(t + 1, yobs[i], q, h1, h2)
+        all_a1[i][t] = tmp[0]
+        all_a2[i][t] = tmp[1]
+    all_a[i] = all_a1[i] + all_a2[i] * Tt
+all_reconstructed_x = np.zeros((100, 100))
+
+x_RMSE = np.zeros(100)
+for i in range(100):
+    all_reconstructed_x[i] = np.log(recover_data(all_a[i], 1200.))  
+    x_RMSE[i] = np.sqrt(np.mean(np.square(true_x - all_reconstructed_x[i])))
