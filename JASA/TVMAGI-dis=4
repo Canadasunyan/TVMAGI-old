@@ -160,19 +160,6 @@ def pointwisethetasigmallikTorch(xlatent, theta, time_constant_param_ls, sigma, 
     return torch.sum(res) - 1e6 * torch.sum(torch.square(theta[:, 2] - theta_lb))
 
 
-        
-
-
-def kernelllik(phi_1, phi_2, sigma, y, d_matrix, phi1_lb, phi2_lb, sigma_lb):
-    """
-    optimize the kernel hyperparameters by maximizing marginal likelihood
-    """
-    phi_1_bounded = torch.clamp(phi_1, min=phi1_lb)
-    phi_2_bounded = torch.clamp(phi_2, min=phi2_lb)
-    sigma_bounded = torch.clamp(sigma, min=sigma_lb)
-    K = MaternKernel(d_matrix, phi_1, phi_2)
-    K += torch.square(sigma) * torch.eye(y.shape[0]).double()
-    return -y.shape[0] * np.log(np.sqrt(2 * np.pi)) - 0.5 * y @ torch.inverse(K) @ y - 0.5 * torch.logdet(K) - 1e8 * torch.square(phi_1 - phi_1_bounded) - 1e8 * torch.square(phi_2 - phi_2_bounded) - 1e8 * torch.square(sigma - sigma_bounded)
 
 def to_band(matrix, bandwidth):
     dim = matrix.shape[0]
@@ -271,7 +258,7 @@ class generalMatern(object):
         return (self.forward(x1, x2).detach())
 
 
-def GPTrain(train_x, train_y, nu, lengthscale_lb=5., learning_rate=1e-4, noisy=True, max_iter=100, verbose=False,
+def GPTrain(train_x, train_y, nu, lengthscale_lb=10., learning_rate=1e-5, noisy=True, max_iter=10, verbose=False,
             eps=1e-6):
     # preprocess input data
     n = train_x.size(0)
@@ -334,14 +321,14 @@ def GPTrain(train_x, train_y, nu, lengthscale_lb=5., learning_rate=1e-4, noisy=T
 
 def TVMAGI_sampler(use_data_idx = 6,
                 days = 32,
-                discretization = 4,
+                discretization = 2,
                 obs_per_day = 1,
                 theta_lowerbound=np.array([0., 0., 0., 0.]),
                 theta_upperbound=np.array([np.inf, 1., 1., 1.]),
                 param_names = ['re', 've', 'vi', 'pd'],
                 is_time_varying=[True, True, False, True],
                 use_trajectory='inferred',
-                learning_rate=np.array([1e-5, 1e-3, 1e-5]),
+                learning_rate=np.array([1e-3, 1e-3, 1e-5]),
                 n_iter = [15001, 100000, 1000, 10000],
                 phi1_lb_ls=np.array([1., 0.1, 0.1]),
                 phi2_lb_ls=np.array([5., 5., 5.]),
@@ -401,7 +388,7 @@ def TVMAGI_sampler(use_data_idx = 6,
         nEpoch=1,
         bandSize=bandwidth,
         useFrequencyBasedPrior=True,
-        useBand=True,
+        useBand=False,
         useMean=False,
         useScalerSigma=False,
         useFixedSigma=False,
@@ -515,7 +502,7 @@ def TVMAGI_sampler(use_data_idx = 6,
     np.save('SEIRD-theta-'+ str(use_data_idx) + '.npy', TVMAGI_theta_torch.detach().numpy())
     np.save('SEIRD-xinit-'+ str(use_data_idx) + '.npy', TVMAGI_xlatent_torch.detach().numpy())
     import pickle
-    f = open("time_constant_param_ls" + str(use_data_idx) + ".txt", "wb")
+    f = open("time_constant_param_ls" + str(use_data_idx) + ".pkl", "wb")
     pickle.dump(time_constant_param_ls, f)
         
         
@@ -775,7 +762,7 @@ def TVMAGI_sampler(use_data_idx = 6,
 if __name__ ==  '__main__': 
     observations = np.load('SEIRD_observations.npy')
     N = 100000.
-    pool = Pool(processes=1)
-    results = pool.map(TVMAGI_sampler, range(1))
+    pool = Pool(processes=100)
+    results = pool.map(TVMAGI_sampler, range(100))
     pool.close()
     pool.join()
