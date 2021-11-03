@@ -47,4 +47,4 @@ for i in range(100):
     observations[i][:, 0] = yobs
     observations[i][:, 1] = Tt
     
-np.save('HIV_observations.npy')
+np.save('HIV_observations.npy', observations)
