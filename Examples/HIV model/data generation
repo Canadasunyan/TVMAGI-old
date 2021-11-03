@@ -1,10 +1,6 @@
 import numpy as np
 import torch
 import scipy
-import argparse
-import sys
-from arma import ode_system, solve_magi
-from arma import matrix
 
 days = 100  
 obs_per_day = 1
@@ -50,3 +46,5 @@ for i in range(100):
     Tt, yobs, _ = gen_data(true_lambda, true_rho, true_gamma, true_delta, days, obs_per_day, noise=True)
     observations[i][:, 0] = yobs
     observations[i][:, 1] = Tt
+    
+np.save('HIV_observations.npy')
