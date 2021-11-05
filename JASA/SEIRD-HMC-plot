@@ -4,19 +4,6 @@ from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection  # New import
 import numpy as np
 
-# x,y2 = np.arange(0, 32, 0.5), np.sin(x) + 1
-# z2 = 2 * np.ones(x.shape)
-
-# ax.add_collection3d(plt.fill_between(x,y,-0.1, color='orange', alpha=0.3,label="filled plot"),1, zdir='y')
-# verts2 = [(x[i],z2[i],y2[i]) for i in range(len(x))] # + [(x.max(),0,0),(x.min(),0,0)]
-# ax.add_collection3d(Poly3DCollection([verts2],color='blue')) # Add a polygon instead of fill_between
-
-# ax.plot(x, np.ones(x.shape),ymean,label="line plot", alpha=0.9)
-# ax.plot(x, 2 * np.ones(x.shape),ymean,label="line plot", alpha=0.9)
-# surf._facecolors2d=surf._facecolors3d
-# surf._edgecolors2d=surf._edgecolors3d
-# ax.legend()
-
 fig = plt.figure()
 ax = fig.add_subplot(111, projection='3d')
 for each in range(10, 20):
