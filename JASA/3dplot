@@ -1,0 +1,53 @@
+from numpy import *
+import matplotlib.pylab as plt
+from mpl_toolkits.mplot3d import Axes3D
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection  # New import
+import numpy as np
+
+# x,y2 = np.arange(0, 32, 0.5), np.sin(x) + 1
+# z2 = 2 * np.ones(x.shape)
+
+# ax.add_collection3d(plt.fill_between(x,y,-0.1, color='orange', alpha=0.3,label="filled plot"),1, zdir='y')
+# verts2 = [(x[i],z2[i],y2[i]) for i in range(len(x))] # + [(x.max(),0,0),(x.min(),0,0)]
+# ax.add_collection3d(Poly3DCollection([verts2],color='blue')) # Add a polygon instead of fill_between
+
+# ax.plot(x, np.ones(x.shape),ymean,label="line plot", alpha=0.9)
+# ax.plot(x, 2 * np.ones(x.shape),ymean,label="line plot", alpha=0.9)
+# surf._facecolors2d=surf._facecolors3d
+# surf._edgecolors2d=surf._edgecolors3d
+# ax.legend()
+
+fig = plt.figure()
+ax = fig.add_subplot(111, projection='3d')
+for each in range(10, 20):
+    alpha_max = np.load('G:/1024(res)/SEIR_res/SEIRD-pd-max-' + str(each) + '.npy')
+    alpha_min = np.load('G:/1024(res)/SEIR_res/SEIRD-pd-min-' + str(each) + '.npy')
+    alpha_mean = np.load('G:/1024(res)/SEIR_res/SEIRD-pd-mean-' + str(each) + '.npy')
+    x = np.arange(0, 32, 0.5)
+    ax.add_collection3d(plt.fill_between(x, alpha_max, alpha_min, color='grey', alpha=0.1, label="filled plot"),
+                        each -9, zdir='y')
+    ax.plot(x, (each -9) * np.ones(x.shape), alpha_mean, label="line plot", alpha=1)
+
+
+def fun(x, y):
+    T = 2
+    parameter_value = [1.8, 0.1, 0.1, 0.05]
+    std = [1., 0.02, 0, 0.025]
+    true_beta = parameter_value[3] + std[3] * np.cos(x * np.pi / 8)
+    return true_beta
+
+
+
+y = np.arange(0, 10, 0.1)
+X, Y = np.meshgrid(x, y)
+zs = np.array(fun(np.ravel(X), np.ravel(Y)))
+Z = zs.reshape(X.shape)
+
+surf = ax.plot_surface(X, Y, Z, alpha=0.2, color='red')
+plt.title(r'Interval estimation of $p^d$')
+ax.set_zlim(0, 0.1)
+ax.set_yticks([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+plt.xlabel('Day')
+plt.ylabel('Replication')
+# ax.legend()
+plt.show()
