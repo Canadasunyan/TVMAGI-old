@@ -1,0 +1,102 @@
+from numpy import *
+import matplotlib.pylab as plt
+from mpl_toolkits.mplot3d import Axes3D
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection  # New import
+import numpy as np
+
+
+import numpy as np
+import matplotlib.pyplot as plt
+import pickle
+
+days = 100
+obs_per_day = 1
+nobs = days * obs_per_day
+linspace = 1000
+X = np.arange(0, days, 1./(obs_per_day * linspace))
+true_lambda = 36.
+true_rho = 0.108
+k = 5e-4
+true_gamma = np.cos(3.14 * X / 500)
+true_delta = 0.1
+N = 1000.
+c = 3.5
+
+
+def true_data(true_lambda, true_rho, true_gamma, true_delta, days, obs_per_day, state0=[350., 20., 1200.],N=N, k=k, c=c, linspace=1000, noise=True):
+    """
+    generate data using pre-set parameters
+    """
+    # check input
+    # [ S, E, I, D, cfr0]
+    nobs = days
+    step_size = 1. / (linspace * obs_per_day)
+    state_ls = np.ones((days * linspace * obs_per_day, 3))
+    state_ls[0] = state0.copy()
+    for i in range(1, linspace * days * obs_per_day):
+        index = i - 1
+        state_ls[i][0] = state_ls[i - 1][0] + step_size * (true_lambda - true_rho * state_ls[i - 1][0] - k * (1-true_gamma[index]) * state_ls[i - 1][0] * state_ls[i - 1][2])
+        state_ls[i][1] = state_ls[i - 1][1] + step_size * (k * (1-true_gamma[index]) * state_ls[i - 1][0] * state_ls[i - 1][2] - true_delta * state_ls[i - 1][1])
+        state_ls[i][2] = state_ls[i - 1][2] + step_size * (N * true_delta * state_ls[i - 1][1] - c * state_ls[i - 1][2])
+    states = state_ls[::obs_per_day * linspace]
+
+    return states[:, 0], state_ls[:, 1], np.log(states[:, 2])
+
+
+Tt, It, true_x = true_data(true_lambda, true_rho, true_gamma, true_delta, days, obs_per_day)
+It_diff = np.zeros(100)
+for i in range(100):
+    It_diff[i] = (It[1000 * i + 1] - It[1000 * i]) * 1000
+
+true_a = -N * It_diff + Tt * (N * k * (1 - true_gamma[::1000]) * np.exp(true_x))
+
+fig = plt.figure()
+ax = fig.add_subplot(111, projection='3d')
+Tt = np.load('G:/1024(res)/HIV_observations.npy')[0][:, 1]
+for each in range(10, 20):
+    a1_max = np.load('G:/1024(res)/HIV-res/HIV-a1-max-' + str(each) + '.npy')
+    a1_min = np.load('G:/1024(res)/HIV-res/HIV-a1-min-' + str(each) + '.npy')
+    a1_mean = np.load('G:/1024(res)/HIV-res/HIV-a1-mean-' + str(each) + '.npy')
+    a2_max = np.load('G:/1024(res)/HIV-res/HIV-a2-max-' + str(each) + '.npy')
+    a2_min = np.load('G:/1024(res)/HIV-res/HIV-a2-min-' + str(each) + '.npy')
+    a2_mean = np.load('G:/1024(res)/HIV-res/HIV-a2-mean-' + str(each) + '.npy')
+    alpha_max = (a1_max * 1e5 + a2_max * 1e3 * Tt) * 0.99
+    alpha_min = (a1_min * 1e5 + a2_min * 1e3 * Tt) * 1.01
+    alpha_mean = a1_mean * 1e5 + a2_mean * 1e3 * Tt
+    x = np.arange(0, 100, 1)
+    ax.add_collection3d(plt.fill_between(x, alpha_max, alpha_min, color='grey', alpha=0.2, label="filled plot"),
+                        each -9, zdir='y')
+    ax.plot(x, (each -9) * np.ones(x.shape), alpha_mean, label="line plot", linewidth=4)
+
+
+def fun(x, y, true_a=true_a):
+    # T = 2
+    # parameter_value = [1.8, 0.1, 0.1, 0.05]
+    # std = [1., 0.02, 0, 0.025]
+    # true_beta = parameter_value[1] - std[1] * np.cos(x * np.pi / 8)
+    days = 20
+    obs_per_day = 12
+    nobs = 240
+    X = np.arange(0, days, 1. / (obs_per_day * 1000))
+    alpha = 0.6 + 0.3 * np.cos(6.28 * x / 10)
+    beta = 0.75
+    delta = 1.
+    gamma = 1 + 0.1 * np.sin(6.28 * x / 10)
+    return true_a
+
+
+
+y = np.arange(0, 10, 0.1)
+X, Y = np.meshgrid(x, y)
+zs = np.array(fun(np.ravel(X), np.ravel(Y)))
+zs = np.tile(zs, 100)
+Z = zs.reshape(X.shape)
+
+surf = ax.plot_surface(X, Y, Z, alpha=0.2, color='red')
+plt.title(r'Interval estimation of $a(t)$', fontsize=20)
+# ax.set_zlim(0.8, 1.6)
+ax.set_yticks([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+plt.xlabel('Day', fontsize=20)
+plt.ylabel('Replication', fontsize=20)
+# ax.legend()
+plt.show()
