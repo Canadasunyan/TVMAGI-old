@@ -1,0 +1,40 @@
+from numpy import *
+import matplotlib.pylab as plt
+from mpl_toolkits.mplot3d import Axes3D
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection  # New import
+import numpy as np
+
+fig = plt.figure()
+ax = fig.add_subplot(111, projection='3d')
+for each in range(10, 20):
+    alpha_max = np.load('G:/1124/LV-max/LV-alpha-max-' + str(each) + '.npy')
+    alpha_min = np.load('G:/1124/LV-min/LV-alpha-min-' + str(each) + '.npy')
+    alpha_mean = np.load('G:/1124/LV-mean/LV-alpha-mean-' + str(each) + '.npy')
+    x = np.arange(0, 20, 1/12)
+    ax.add_collection3d(plt.fill_between(x, alpha_max, alpha_min, color='grey', alpha=0.1, label="filled plot"),
+                        each -9, zdir='y')
+    ax.plot(x, (each -9) * np.ones(x.shape), alpha_mean, label="line plot", alpha=1)
+
+
+def fun(x, y):
+    alpha = 0.6 + 0.3 * np.cos(6.28 * x / 10)
+    beta = 0.75
+    delta = 1.
+    gamma = 1 + 0.1 * np.sin(6.28 * X / 10)
+    return alpha
+
+
+
+y = np.arange(0, 10, 0.1)
+X, Y = np.meshgrid(x, y)
+zs = np.array(fun(np.ravel(X), np.ravel(Y)))
+Z = zs.reshape(X.shape)
+
+surf = ax.plot_surface(X, Y, Z, alpha=0.2, color='red')
+plt.title(r'Interval estimation of $\alpha(t)$')
+ax.set_zlim(0, 1.25)
+ax.set_yticks([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+plt.xlabel('Year')
+plt.ylabel('Replication')
+# ax.legend()
+plt.show()
