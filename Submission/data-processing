@@ -1,0 +1,389 @@
+import numpy as np
+import torch
+import matplotlib.pyplot as plt
+import pickle
+
+days = 32
+discretization = 1  # set the discretization level 
+obs_per_day = 1
+nobs = days * obs_per_day
+MAGI_niter = 15001
+N = 100000.
+X = np.arange(0, days, 1. / (obs_per_day * discretization))
+i0 = 50
+e0 = 100
+T = 2
+parameter_value = [1.8, 0.1, 0.1, 0.05]
+std = [1., 0.02, 0, 0.025]
+
+
+tmp_2 = np.linspace(0, 2 * T * np.pi, discretization * nobs)
+true_beta = parameter_value[0] - std[0] * np.cos(tmp_2)
+true_ve = parameter_value[1]- std[1] * np.cos(tmp_2)
+true_vi = parameter_value[2]
+true_pd = parameter_value[3] + std[3] * np.cos(tmp_2)
+theta_true = np.vstack([true_re_2, true_ve_2, true_pd_2]).T
+
+all_beta = np.zeros((100, 32))
+all_ve = np.zeros((100, 32))
+all_pd = np.zeros((100, 32))
+all_vi = np.zeros(100)
+all_xinit = np.zeros((100, 4))
+RMSE_beta = np.zeros(100)
+for i in range(100):
+    file = np.load('theta-'+str(i)+'.npy')
+    all_beta[i] = file[:, 0]
+    all_ve[i] = file[:, 1]
+    all_pd[i] = file[:, 2] / 4 # recover the scaling of parameters
+
+
+for i in range(100):
+    file = pickle.load(open('vi-'+str(i)+'.txt', 'rb'))
+    print(file)
+    all_vi[i] = file[0].detach().item()
+
+for i in range(100):
+    file = np.load('xlatent-'+str(i)+'.npy')
+    all_xinit[i] = file[0]
+    
+# Calculate RMSE of parameters
+RMSE_beta = np.sqrt(np.mean(np.square(all_beta - true_beta), axis=0))
+print(np.mean(RMSE_beta), np.std(RMSE_beta))
+RMSE_ve = np.sqrt(np.mean(np.square(all_ve - true_ve), axis=0))
+print(np.mean(RMSE_ve), np.std(RMSE_ve))
+RMSE_vi = np.abs(all_vi - 0.1)
+print(np.mean(RMSE_vi), np.std(RMSE_vi))
+RMSE_pd = np.sqrt(np.mean(np.square(all_pd - true_pd), axis=0))
+print(np.mean(RMSE_pd), np.std(RMSE_pd))
+
+
+# Visualization of parameters
+import os
+os.environ["KMP_DUPLICATE_LIB_OK"]  =  "TRUE"
+
+%matplotlib inline
+import matplotlib 
+import matplotlib.pyplot as plt
+
+from matplotlib.pyplot import figure
+
+figure(figsize=(12.5, 4), dpi=300)
+plt.rcParams['savefig.dpi'] = 300 
+plt.rcParams['figure.dpi'] = 300 
+
+plt.subplots_adjust(top=1,bottom=0,left=0,right=1, wspace =0, hspace =0)
+ax1 = plt.subplot(1, 3, 1) 
+lower_95 = np.percentile(all_beta, 97.5, axis=0)
+upper_95 = np.percentile(all_beta, 2.5, axis=0)
+x = np.arange(0, 32, 1 / discretization)
+plt.fill_between(x, lower_95, upper_95, color='grey', alpha = 0.4, label='95% interval')
+plt.plot(true_re, label='True')
+plt.plot(x, np.mean(all_beta, axis=0), label=r'Mean of TVMAGI (d=1)')
+plt.title(r'$\beta$')
+plt.grid()
+plt.legend(bbox_to_anchor=(2.3, -0.1), fontsize=12, ncol=3)
+
+ax2 = plt.subplot(1, 3, 2)
+lower_95 = np.percentile(all_ve, 97.5, axis=0)
+upper_95 = np.percentile(all_ve, 2.5, axis=0)
+plt.fill_between(x, lower_95, upper_95, color='grey', alpha = 0.4)
+plt.plot(x, np.mean(all_ve, axis=0))
+plt.plot(true_ve)
+plt.grid()
+plt.title(r'$v^e$')
+
+
+ax3 = plt.subplot(1, 3, 3)
+lower_95 = np.percentile(all_pd, 97.5, axis=0)
+upper_95 = np.percentile(all_pd, 2.5, axis=0)
+plt.fill_between(x, lower_95, upper_95, color='grey', alpha = 0.4)
+plt.plot(x, np.mean(all_pd, axis=0))
+plt.plot(true_pd)
+plt.title(r'$p^d$')
+plt.suptitle(r'Results of TVMAGI (MAP) across 100 simulations', y=1.2)
+plt.grid()
+
+
+# Define Matern kernel for Gaussian smoothing
+import torch
+import scipy.special as fun
+
+class Bessel(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, inp, nu):
+        ctx._nu = nu
+        ctx.save_for_backward(inp)
+        mat = fun.kv(nu, inp.detach().numpy())
+        return (torch.from_numpy(np.array(mat)))
+
+    @staticmethod
+    def backward(ctx, grad_out):
+        inp, = ctx.saved_tensors
+        nu = ctx._nu
+        grad_in = grad_out.numpy() * np.array(fun.kvp(nu, inp.detach().numpy()))
+        return (torch.from_numpy(grad_in), None)
+
+
+class generalMatern(object):
+
+    # has_lengthscale = True
+
+    def __init__(self, nu, lengthscale, **kwargs):
+        # super(Matern,self).__init__(**kwargs)
+        self.nu = nu
+        self.log_lengthscale = torch.tensor(np.log(lengthscale))
+        self.log_lengthscale.requires_grad_(True)
+
+    def _set_lengthscale(self, lengthscale):
+        self.log_lengthscale = torch.tensor(np.log(lengthscale))
+
+    def lengthscale(self):
+        return (torch.exp(self.log_lengthscale).item())
+
+    def forward(self, x1, x2=None, **params):
+        lengthscale = torch.exp(self.log_lengthscale)
+        x1 = x1.squeeze()
+        if x2 is None: x2 = x1
+        r_ = (x1.reshape(-1, 1) - x2.reshape(1, -1)).abs()
+        r_ = np.sqrt(2. * self.nu) * r_ / lengthscale
+        # handle limit at 0, allows more efficient backprop
+        r_ = torch.clamp(r_, min=1e-15)
+        C_ = np.power(2, 1 - self.nu) * np.exp(-fun.loggamma(self.nu)) * torch.pow(r_, self.nu)
+        mat = Bessel.apply(r_, self.nu)
+        C_ = C_ * mat
+        return (C_)
+
+    def C(self, x1, x2=None):
+        return (self.forward(x1, x2).detach())
+
+
+def GPTrain(train_x, train_y, nu, lengthscale_lb=3., learning_rate=1e-4, noisy=True, max_iter=10, verbose=False,
+            eps=1e-6):
+    # preprocess input data
+    n = train_x.size(0)
+    # normalized x to 0 and 1
+    x_range = [torch.min(train_x).item(), torch.max(train_x).item()]
+    train_x = (train_x - x_range[0]) / (x_range[1] - x_range[0])
+    #     train_x[0] = eps
+    # set up kernel
+    kernel = generalMatern(nu=nu, lengthscale=1.1 * lengthscale_lb / (x_range[1] - x_range[0]))
+    # lambda = noise/outputscale
+    log_lambda = torch.tensor(np.log(1e-2))
+    log_lambda.requires_grad_(True)
+    loglb_normalized = torch.log(torch.tensor(lengthscale_lb / (x_range[1] - x_range[0])))
+    optimizer = torch.optim.LBFGS([kernel.log_lengthscale, log_lambda], lr=learning_rate)
+    # training
+    prev_loss = np.Inf
+    for i in range(max_iter):
+        print(max_iter)
+        R = kernel.forward(train_x) + torch.exp(log_lambda) * torch.eye(n)
+        e, v = torch.eig(R, eigenvectors=True)
+        e = e[:, 0]  # eigenvalues
+        a = v.T @ torch.ones(n)
+        b = v.T @ train_y
+        mean = ((a / e).T @ b) / ((a / e).T @ a)
+        d = v.T @ (train_y - mean)
+        outputscale = 1. / n * (d / e).T @ d
+
+        def closure():
+            optimizer.zero_grad()
+            R = kernel.forward(train_x) + torch.exp(log_lambda) * torch.eye(n)
+            e, v = torch.eig(R, eigenvectors=True)
+            e = e[:, 0]  # eigenvalues
+            a = v.T @ torch.ones(n)
+            b = v.T @ train_y
+            mean = ((a / e).T @ b) / ((a / e).T @ a)
+            d = v.T @ (train_y - mean)
+            outputscale = 1. / n * (d / e).T @ d
+            loss = torch.log(outputscale) + torch.mean(torch.log(e))
+            tmp0 = torch.clamp(kernel.log_lengthscale, max=0.)
+            loss = loss + 1e3 * torch.sum(torch.square(kernel.log_lengthscale - tmp0))
+            tmp = torch.clamp(kernel.log_lengthscale, min=loglb_normalized)
+            loss = loss + 1e3 * torch.sum(torch.square(kernel.log_lengthscale - tmp))
+            tmp2 = torch.clamp(log_lambda, min=np.log(1e-6))
+            loss = loss + 1e3 * torch.sum(torch.square(log_lambda - tmp2))
+            print(loss)
+            print((x_range[1] - x_range[0]) * torch.exp(kernel.log_lengthscale).item(), torch.exp(log_lambda))
+            loss.backward()
+            return loss
+
+        optimizer.step(closure)
+
+    R = kernel.forward(train_x) + torch.exp(log_lambda) * torch.eye(n)
+    Rinv = torch.inverse(R)
+    ones = torch.ones(n)
+    mean = ((ones.T @ Rinv @ train_y) / (ones.T @ Rinv @ ones)).item()
+    outputscale = (1 / n * (train_y - mean).T @ Rinv @ (train_y - mean)).item()
+    noisescale = outputscale * torch.exp(log_lambda).item()
+    return mean, outputscale, noisescale, (x_range[1] - x_range[0]) * torch.exp(kernel.log_lengthscale).item()
+
+
+lengthscale_lb = 5.   # hyperparameter of trained Gaussian process
+x_range = torch.tensor(np.arange(0, 32, 1 / discretization))
+ker = generalMatern(nu=2.01, lengthscale=lengthscale_lb / (x_range[1] - x_range[0]))
+cov_matrix = ker.C(x_range)
+
+def GPinterp(x, y, ker, inv_cov, discretization=1, days=32, obs_per_day=1):
+    x_obs = np.arange(0, 32, 1 / discretization)
+    return y.T.dot(inv_cov).dot(ker.C(torch.tensor(x), torch.tensor(x_obs)).T)
+
+# Obtaining true trajectory for comparison
+def true_data(days=32, obs_per_day=1, state0=[100000., 100., 50., 50.], linspace=100):
+    """
+    params: parameter: [beta, ve, vi, pd]
+    """
+    # check input
+    parameter_value = [1.8, 0.1, 0.1, 0.05]
+    std = [1., 0.02, 0, 0.025]
+    tmp = np.linspace(0, 2 * T * np.pi, 3200)
+    true_re = parameter_value[0] - std[0] * np.cos(tmp)
+    true_ve = parameter_value[1]- std[1] * np.cos(tmp)
+    true_vi = parameter_value[2] 
+    true_pd = parameter_value[3] + std[3] * np.cos(tmp)
+    nFull = int(days * obs_per_day)
+    step_size = 1. / (linspace * obs_per_day)
+    state_ls = np.ones((nFull * linspace, 4))
+    state_ls[0][0] = state0[0]
+    state_ls[0][1] = state0[1]
+    state_ls[0][2] = state0[2]
+    state_ls[0][3] = state0[3]
+
+    for i in range(1, linspace * nFull):
+        index = i - 1
+        state_ls[i][0] = state_ls[i - 1][0] - step_size * true_re[index] * state_ls[i - 1][2] * state_ls[i - 1][0] / N
+        state_ls[i][1] = state_ls[i - 1][1] + step_size * true_re[index] * state_ls[i - 1][2] * state_ls[i - 1][0] / N - step_size * true_ve[index] * state_ls[i - 1][1]
+        state_ls[i][2] = state_ls[i - 1][2] + step_size * true_ve[index] * state_ls[i - 1][1] - step_size * state_ls[i - 1][2] * true_vi
+        state_ls[i][3] = state_ls[i - 1][3] + step_size * state_ls[i - 1][2] * true_vi  * true_pd[index]
+    states = state_ls[::linspace]
+    return states
+
+true_x = true_data()
+
+# Reconstruct trajectories. Two options are available: linear interpolation or Gaussian smoothing interpolation of parameters. 
+# Euler method is used in reconstructing trajectories
+def recover_data(beta, ve, pd, vi, state0, days=32, obs_per_day=1, discretization = 1, linspace=100, mode='Linear'):
+    """
+    params: parameter: [beta, ve, vi, pd]
+    """
+    # check input
+    # [ S, E, I, D, cfr0]
+    freq = 1. / discretization
+    nFull = int(days * obs_per_day)
+    step_size = 1. / (linspace * obs_per_day)
+    state_ls = np.ones((nFull * linspace, 4))
+    state_ls[0][0] = state0[0]
+    state_ls[0][1] = state0[1]
+    state_ls[0][2] = state0[2]
+    state_ls[0][3] = state0[3]
+    # Use linear interpolation for theta
+    if mode == 'Linear': 
+        x_initial = np.linspace(0, 100, beta.shape[0])
+        x_interp = np.linspace(0, 100, 3200)
+        beta_interp = np.interp(x_interp, x_initial, beta)
+        ve_interp = np.interp(x_interp, x_initial, ve)
+        pd_interp = np.interp(x_interp, x_initial, pd)
+    # Use Gaussian interpolation for theta    
+    elif mode == 'Gaussian':
+        beta_interp = np.zeros(3200)
+        ve_interp = np.zeros(3200)
+        pd_interp = np.zeros(3200)
+        beta_inv_cov = np.linalg.inv(cov_matrix)
+        ve_inv_cov = np.linalg.inv(cov_matrix)
+        pd_inv_cov = np.linalg.inv(cov_matrix)
+        for i in range(3200):
+            beta_interp[i] = GPinterp(i / 100, beta, ker, beta_inv_cov)
+            ve_interp[i] = GPinterp(i / 100, ve, ker, ve_inv_cov)
+            pd_interp[i] = GPinterp(i / 100, pd, ker, pd_inv_cov)
+    else:
+        raise ValueError
+        
+        
+    for i in range(1, linspace * nFull):
+        index = i - 1
+        state_ls[i][0] = state_ls[i - 1][0] - step_size * beta_interp[index] * state_ls[i - 1][2] * state_ls[i - 1][0] / N
+        state_ls[i][1] = state_ls[i - 1][1] + step_size * beta_interp[index] * state_ls[i - 1][2] * state_ls[i - 1][0] / N - step_size * ve_interp[index] * state_ls[i - 1][1]
+        state_ls[i][2] = state_ls[i - 1][2] + step_size * ve_interp[index] * state_ls[i - 1][1] - step_size * state_ls[i - 1][2] * vi
+        state_ls[i][3] = state_ls[i - 1][3] + step_size * state_ls[i - 1][2] * vi * pd_interp[index]
+#     states = state_ls[::int(linspace / discretization)]
+    return state_ls
+
+
+all_reconstructed_x = np.zeros((100, 3200, 4))
+for i in range(100):
+    all_reconstructed_x[i] = recover_data(all_beta[i], all_ve[i], all_pd[i], all_vi[i], np.exp(all_xinit[i]))
+
+    
+# Visualization of recovered trajectories
+yobs = np.exp(np.load('SEIRD_observations.npy')[0])
+
+from matplotlib.pyplot import figure
+
+figure(figsize=(10, 2), dpi=300)
+plt.subplots_adjust(top=1,bottom=0,left=0,right=1, wspace =0, hspace =0)
+ax1 = plt.subplot(1, 4, 1) # 两行一列，位置是1的子图
+lower_95 = np.percentile(all_reconstructed_x[:,:, 0], 97.5, axis=0)
+upper_95 = np.percentile(all_reconstructed_x[:,:, 0], 2.5, axis=0)
+x = np.arange(0, 32, 0.01)
+plt.yticks(np.array([20000, 40000, 60000, 80000, 100000]), ['2e4', '4e4', '6e4', '8e4', '1e5'])
+plt.fill_between(x, lower_95, upper_95, color='grey', alpha = 0.4, label='95% interval')
+plt.plot(true_x[:, 0], label='True')
+plt.plot(x, np.mean(all_reconstructed_x[:,:, 0], axis=0), label=r'Mean of TVMAGI ($\nu=2.01$)')
+plt.scatter(np.arange(0, 32,1), yobs[:, 0], s = 1, color='black', label='Sample observation', zorder=100)
+plt.grid()
+plt.title(r'$S$')
+plt.legend(bbox_to_anchor=(3.6, -0.1), fontsize=12, ncol=4)
+
+ax2 = plt.subplot(1, 4, 2)
+lower_95 = np.percentile(all_reconstructed_x[:,:, 1], 97.5, axis=0)
+upper_95 = np.percentile(all_reconstructed_x[:,:, 1], 2.5, axis=0)
+plt.yticks(np.array([10000, 20000, 30000, 40000, 50000]), ['1e4', '2e4', '3e4', '4e4', '5e4'])
+plt.fill_between(x, lower_95, upper_95, color='grey', alpha = 0.4)
+plt.plot(true_x[:, 1])
+plt.plot(x, np.mean(all_reconstructed_x[:,:, 1], axis=0))
+plt.scatter(np.arange(0, 32, 1), yobs[:, 1], s = 1, color='black', label='Sample observation', zorder=100)
+plt.grid()
+plt.title(r'$E$')
+
+
+ax3 = plt.subplot(1, 4, 3)
+lower_95 = np.percentile(all_reconstructed_x[:,:, 2], 97.5, axis=0)
+upper_95 = np.percentile(all_reconstructed_x[:,:, 2], 2.5, axis=0)
+plt.fill_between(x, lower_95, upper_95, color='grey', alpha = 0.4)
+plt.yticks(np.array([10000, 20000, 30000]), ['1e4', '2e4', '3e4'])
+plt.plot(true_x[:, 2])
+plt.plot(x, np.mean(all_reconstructed_x[:,:, 2], axis=0))
+plt.scatter(np.arange(0, 32, 1), yobs[:, 2], s = 1, color='black', label='Sample observation', zorder=100)
+plt.grid()
+plt.title(r'$I$')
+
+
+ax4= plt.subplot(1, 4, 4)
+lower_95 = np.percentile(all_reconstructed_x[:,:, 3], 97.5, axis=0)
+upper_95 = np.percentile(all_reconstructed_x[:,:, 3], 2.5, axis=0)
+# plt.yticks(np.array([250,500,750,1000,1250,1500]))
+plt.fill_between(x, lower_95/4, upper_95/4, color='grey', alpha = 0.4)
+plt.plot(true_x[:, 3])
+plt.plot(x, np.mean(all_reconstructed_x[:,:, 3], axis=0))
+plt.scatter(np.arange(0, 32, 1), yobs[:, 3], s = 1, color='black', label='Sample observation', zorder=100)
+plt.grid()
+plt.title(r'$D$')
+
+plt.suptitle(r'Reconstructed $x(t)$ of TVMAGI ($d=1$) across 100 simulations', y=1.2)
+
+
+# Calculate reconstructed RMSE
+RMSE_S = np.zeros(100)
+RMSE_E = np.zeros(100)
+RMSE_I = np.zeros(100)
+RMSE_D = np.zeros(100)
+
+for i in range(100):
+    RMSE_S[i] = np.sqrt(np.mean(np.square(all_reconstructed_x[i, ::100, 0] - true_x[:, 0])))
+    RMSE_E[i] = np.sqrt(np.mean(np.square(all_reconstructed_x[i, ::100, 1] - true_x[:, 1])))
+    RMSE_I[i] = np.sqrt(np.mean(np.square(all_reconstructed_x[i, ::100, 2] - true_x[:, 2])))
+    RMSE_D[i] = np.sqrt(np.mean(np.square(all_reconstructed_x[i, ::100, 3] - true_x[:, 3])))
+    
+print(np.mean(RMSE_S), np.std(RMSE_S))
+print(np.mean(RMSE_E), np.std(RMSE_E))
+print(np.mean(RMSE_I), np.std(RMSE_I))
+print(np.mean(RMSE_D), np.std(RMSE_D))
