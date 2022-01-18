@@ -40,3 +40,9 @@ def gen_data(alpha, beta, delta, gamma, days, obs_per_day, state0=[3., 1.], lins
     states = state_ls[::linspace]
     states *= np.random.normal(1, 0.03, states.shape)
     return states
+
+obs = np.zeros((100, 240, 2))
+for i in range(100):
+    obs[i] = gen_data(alpha, beta, delta, gamma, days, obs_per_day)
+    
+np.save('LV_observations.npy', obs)
