@@ -352,7 +352,7 @@ def TVMAGI_sampler(use_data_idx=6,
                    is_time_varying=[True, True, False, True],
                    use_trajectory='inferred',
                    learning_rate=np.array([1e-4, 1e-3, 1e-5]),
-                   n_iter=[15001, 50000, 1000, 5000],
+                   n_iter=[15001, 50000, 10000],
                    phi1_lb_ls=np.array([1., 0.1, 0.1]),
                    phi2_lb_ls=np.array([5., 5., 5.]),
                    sigma_lb_ls=np.array([0.01, 0.01, 0.01]),
@@ -508,7 +508,7 @@ def TVMAGI_sampler(use_data_idx=6,
         [TVMAGI_xlatent_torch, TVMAGI_theta_torch, TVMAGI_sigma_torch] + time_constant_param_ls, lr=1e-5)
     lr_scheduler = torch.optim.lr_scheduler.StepLR(TVMAGI_optimizer, step_size=10000, gamma=0.9)
     cur_loss = np.Inf
-    for epoch in range(n_iter[3]):
+    for epoch in range(n_iter[2]):
         TVMAGI_optimizer.zero_grad()
         # compute loss function
         llik = xthetasigmallikTorch(TVMAGI_xlatent_torch, TVMAGI_theta_torch, time_constant_param_ls,
@@ -604,7 +604,7 @@ def TVMAGI_sampler(use_data_idx=6,
 
     class HMC:
         def __init__(self, negllik, all_theta, xlatent_shape, theta_shape, sigma_shape, time_constant_param_ls,
-                     lsteps=100, epsilon=1e-5, n_samples=8000, upper_bound=None, lower_bound=None, burn_in_ratio=0.5):
+                     lsteps=100, epsilon=1e-5, n_samples=16000, upper_bound=None, lower_bound=None, burn_in_ratio=0.5):
             self.all_theta = all_theta
             self.theta_shape = theta_shape
             self.xlatent_shape = xlatent_shape
