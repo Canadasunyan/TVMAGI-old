@@ -220,7 +220,7 @@ class generalMatern(object):
         return (self.forward(x1, x2).detach())
 
 
-def GPTrain(train_x, train_y, nu, lengthscale_lb=3., learning_rate=1e-4, noisy=True, max_iter=100, verbose=False,
+def GPTrain(train_x, train_y, nu, lengthscale_lb=3., learning_rate=1e-6, noisy=True, max_iter=5, verbose=False,
             eps=1e-6):
     # preprocess input data
     n = train_x.size(0)
@@ -293,7 +293,7 @@ def TVMAGI_solver(use_data_idx, fOde=fOde, fOdeDx=fOdeDx, fOdeDtheta=fOdeDtheta,
                   is_time_varying=[True, False, False, True], 
                   use_trajectory='inferred', 
                   learning_rate=np.array([1e-4, 1e-3, 1e-5]), 
-                  n_iter = [15001, 50000, 500, 50000],
+                  n_iter = [15001, 50000, 10000],
                   bandwidth=20,
                   nu=2.01,
                   observations = np.load('LV_observations.npy')):
@@ -442,7 +442,7 @@ def TVMAGI_solver(use_data_idx, fOde=fOde, fOdeDx=fOdeDx, fOdeDtheta=fOdeDtheta,
     TVMAGI_optimizer = torch.optim.Adam([TVMAGI_xlatent_torch, TVMAGI_theta_torch, TVMAGI_sigma_torch] + time_constant_param_ls, lr=1e-5)
     lr_scheduler = torch.optim.lr_scheduler.StepLR(TVMAGI_optimizer, step_size=10000, gamma=0.9)
     cur_loss = float('inf')
-    for epoch in range(n_iter[3]):
+    for epoch in range(n_iter[2]):
         TVMAGI_optimizer.zero_grad()
         # compute loss function
         llik = xthetasigmallikTorch(TVMAGI_xlatent_torch, TVMAGI_theta_torch, time_constant_param_ls, TVMAGI_sigma_torch,
@@ -689,11 +689,13 @@ def TVMAGI_solver(use_data_idx, fOde=fOde, fOdeDx=fOdeDx, fOdeDtheta=fOdeDtheta,
     # sampler.Nabla(all_theta)
     # lower_bound = torch.zeros(all_theta_pointwise.shape)
     samples, b, c, d = sampler.sample(all_theta_TVMAGI, TV_theta_mean, ydata, CovAllDimensionsPyList, fOdeTorch, priorTemperature, KinvthetaList)
-    k = samples[4000:, 480:480+480]
+    k = samples[8000:, 480:480+480]
+    xinit_ls = samples[8000:, :2]
+    constant_ls = samples[8000:, 960:965]
     days= 20
     obs_per_day = 12
-    alpha_ls = np.zeros((4000, 240))
-    gamma_ls = np.zeros((4000, 240))
+    alpha_ls = np.zeros((8000, 240))
+    gamma_ls = np.zeros((8000, 240))
 
     for i in range(4000):
         val = np.zeros((240, 2))
@@ -711,12 +713,16 @@ def TVMAGI_solver(use_data_idx, fOde=fOde, fOdeDx=fOdeDx, fOdeDtheta=fOdeDtheta,
     max_gamma = np.percentile(gamma_ls, 100, axis=0)
     min_gamma = np.percentile(gamma_ls, 0, axis=0)
     mean_gamma = np.mean(gamma_ls, axis=0)
+    mean_constant = np.mean(constant_ls, axis=0)
+    mean_xinit = np.mean(xinit_ls, axis=0)
     np.save('LV-alpha-mean-'+ str(use_data_idx) + '.npy', mean_alpha)
     np.save('LV-alpha-min-'+ str(use_data_idx) + '.npy', min_alpha)
     np.save('LV-alpha-max-'+ str(use_data_idx) + '.npy', max_alpha)
     np.save('LV-gamma-mean-'+ str(use_data_idx) + '.npy', mean_gamma)
     np.save('LV-gamma-min-'+ str(use_data_idx) + '.npy', min_gamma)
     np.save('LV-gamma-max-'+ str(use_data_idx) + '.npy', max_gamma)
+    np.save('LV-constant-mean-'+ str(use_data_idx) + '.npy', constant_ls)
+    np.save('LV-xinit-mean-' + str(use_data_idx) + '.npy', mean_xinit)
     np.save('LV-TVMAGI-' + str(use_data_idx) + '.npy', TVMAGI_theta_torch.detach().numpy())
     return samples, b, c, d
 
