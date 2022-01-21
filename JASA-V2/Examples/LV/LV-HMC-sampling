@@ -451,7 +451,7 @@ def TVMAGI_solver(use_data_idx, fOde=fOde, fOdeDx=fOdeDx, fOdeDtheta=fOdeDtheta,
         loss = -llik
         if epoch % 500 == 0:
             print(epoch, loss.item())
-            if epoch > 10000 and loss.item() < 2000:
+            if epoch > 20000 and loss.item() < 2000:
                 break
             cur_loss = loss.item()
         loss.backward()
