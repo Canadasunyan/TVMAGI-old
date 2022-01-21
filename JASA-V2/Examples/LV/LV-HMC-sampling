@@ -458,25 +458,6 @@ def TVMAGI_solver(use_data_idx, fOde=fOde, fOdeDx=fOdeDx, fOdeDtheta=fOdeDtheta,
         TVMAGI_optimizer.step()
         lr_scheduler.step()
 
-#     param_ls = TVMAGI_theta_torch.detach().numpy()
-#     np.save('param_' + str(use_data_idx) +  '.npy', param_ls)
-#     np.save('beta_' + str(use_data_idx) +  '.npy', np.array(time_constant_param_ls[0].detach().item()))
-#     np.save('delta_' + str(use_data_idx) + '.npy', np.array(time_constant_param_ls[1].detach().item()))
-#     np.save('xinit_' + str(use_data_idx) + '.npy', TVMAGI_xlatent_torch.detach().numpy()[0])
-        
-#     X = np.arange(0, days, 1./obs_per_day)
-#     true_alpha = 0.6 + 0.3 * np.cos(6.28 * X / 10)
-#     beta = 0.75 
-#     delta = 1. 
-#     true_gamma = 1 + 0.1 * np.sin(6.28 * X / 10)
-#     plt.subplot(1, 2, 1)
-#     plt.plot(param_ls[:, 0])
-#     plt.plot(true_alpha)
-#     plt.subplot(1, 2, 2)
-#     plt.plot(param_ls[:, 1])
-#     plt.plot(true_gamma)
-#     plt.savefig('plot_' + str(use_data_idx)  + '.png', dpi = 200)
-#     plt.close('all')
   # HMC sampler ##############
     def vectorize(xlatent, theta, sigma, time_constant_param_ls):
         t1 = torch.reshape(xlatent.detach(), (-1,))
@@ -691,7 +672,7 @@ def TVMAGI_solver(use_data_idx, fOde=fOde, fOdeDx=fOdeDx, fOdeDtheta=fOdeDtheta,
     samples, b, c, d = sampler.sample(all_theta_TVMAGI, TV_theta_mean, ydata, CovAllDimensionsPyList, fOdeTorch, priorTemperature, KinvthetaList)
     k = samples[8000:, 480:480+480]
     xinit_ls = samples[8000:, :2]
-    constant_ls = samples[8000:, 960:965]
+    constant_ls = samples[8000:, 962:964]
     days= 20
     obs_per_day = 12
     alpha_ls = np.zeros((8000, 240))
@@ -704,23 +685,13 @@ def TVMAGI_solver(use_data_idx, fOde=fOde, fOdeDx=fOdeDx, fOdeDtheta=fOdeDtheta,
         alpha_ls[i] = val[:, 0]
         gamma_ls[i] = val[:, 1]
 
-    max_alpha = np.percentile(alpha_ls, 97.5, axis=0)
-    min_alpha = np.percentile(alpha_ls, 2.5, axis=0)
-    mean_alpha = np.mean(alpha_ls, axis=0)
-    # m = (true_alpha <= max_alpha) & (true_alpha >= min_alpha)
-    # interval_beta += m.astype('float')
 
-    max_gamma = np.percentile(gamma_ls, 97.5, axis=0)
-    min_gamma = np.percentile(gamma_ls, 2.5, axis=0)
-    mean_gamma = np.mean(gamma_ls, axis=0)
+
+
     mean_constant = np.mean(constant_ls, axis=0)
     mean_xinit = np.mean(xinit_ls, axis=0)
-    np.save('LV-alpha-mean-'+ str(use_data_idx) + '.npy', mean_alpha)
-    np.save('LV-alpha-min-'+ str(use_data_idx) + '.npy', min_alpha)
-    np.save('LV-alpha-max-'+ str(use_data_idx) + '.npy', max_alpha)
-    np.save('LV-gamma-mean-'+ str(use_data_idx) + '.npy', mean_gamma)
-    np.save('LV-gamma-min-'+ str(use_data_idx) + '.npy', min_gamma)
-    np.save('LV-gamma-max-'+ str(use_data_idx) + '.npy', max_gamma)
+    np.save('LV-alpha-ls-'+ str(use_data_idx) + '.npy', alpha_ls)
+    np.save('LV-gamma-ls-'+ str(use_data_idx) + '.npy', gamma_ls)
     np.save('LV-constant-mean-'+ str(use_data_idx) + '.npy', constant_ls)
     np.save('LV-xinit-mean-' + str(use_data_idx) + '.npy', mean_xinit)
     np.save('LV-TVMAGI-' + str(use_data_idx) + '.npy', TVMAGI_theta_torch.detach().numpy())
