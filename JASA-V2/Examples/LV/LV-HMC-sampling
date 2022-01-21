@@ -220,7 +220,7 @@ class generalMatern(object):
         return (self.forward(x1, x2).detach())
 
 
-def GPTrain(train_x, train_y, nu, lengthscale_lb=3., learning_rate=1e-6, noisy=True, max_iter=5, verbose=False,
+def GPTrain(train_x, train_y, nu, lengthscale_lb=5., learning_rate=1e-6, noisy=True, max_iter=5, verbose=False,
             eps=1e-6):
     # preprocess input data
     n = train_x.size(0)
@@ -293,7 +293,7 @@ def TVMAGI_solver(use_data_idx, fOde=fOde, fOdeDx=fOdeDx, fOdeDtheta=fOdeDtheta,
                   is_time_varying=[True, False, False, True], 
                   use_trajectory='inferred', 
                   learning_rate=np.array([1e-4, 1e-3, 1e-5]), 
-                  n_iter = [15001, 50000, 10000],
+                  n_iter = [15001, 50000, 100000],
                   bandwidth=20,
                   nu=2.01,
                   observations = np.load('LV_observations.npy')):
@@ -451,7 +451,7 @@ def TVMAGI_solver(use_data_idx, fOde=fOde, fOdeDx=fOdeDx, fOdeDtheta=fOdeDtheta,
         loss = -llik
         if epoch % 500 == 0:
             print(epoch, loss.item())
-            if torch.isnan(loss) == False and loss.item() - cur_loss > -0.001 and loss.item() - cur_loss < 0.001:
+            if epoch > 10000 and loss.item() < 2000:
                 break
             cur_loss = loss.item()
         loss.backward()
@@ -552,7 +552,7 @@ def TVMAGI_solver(use_data_idx, fOde=fOde, fOdeDx=fOdeDx, fOdeDtheta=fOdeDtheta,
         return -(torch.sum(res) + torch.sum(res_theta))
 
     class HMC:
-        def __init__(self, negllik, all_theta, xlatent_shape, theta_shape, sigma_shape, time_constant_param_ls, lsteps=100, epsilon=1e-5, n_samples=16000, upper_bound = None, lower_bound = None, burn_in_ratio = 0.5):
+        def __init__(self, negllik, all_theta, xlatent_shape, theta_shape, sigma_shape, time_constant_param_ls, lsteps=100, epsilon=1e-6, n_samples=8000, upper_bound = None, lower_bound = None, burn_in_ratio = 0.5):
             self.all_theta = all_theta
             self.theta_shape = theta_shape
             self.xlatent_shape = xlatent_shape
