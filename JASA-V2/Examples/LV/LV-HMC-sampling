@@ -457,6 +457,7 @@ def TVMAGI_solver(use_data_idx, fOde=fOde, fOdeDx=fOdeDx, fOdeDtheta=fOdeDtheta,
         loss.backward()
         TVMAGI_optimizer.step()
         lr_scheduler.step()
+        np.save('likelihood-' + str(use_data_idx) + '.npy', np.array([loss.item()]))
 
   # HMC sampler ##############
     def vectorize(xlatent, theta, sigma, time_constant_param_ls):
@@ -657,7 +658,7 @@ def TVMAGI_solver(use_data_idx, fOde=fOde, fOdeDx=fOdeDx, fOdeDtheta=fOdeDtheta,
                         standard_deviation = torch.tensor(np.std(samples[EachIter - 100:EachIter, :], axis = 0))
                         if torch.mean(standard_deviation) > 1e-6:
                             self.epsilon = 0.05 * standard_deviation * torch.mean(self.epsilon) / torch.mean(standard_deviation) + 0.95 * self.epsilon
-            return samples, acceptance_ls, trace_val, nan_ls # [self.total_samples-self.n_samples:, :]
+            return samples, acceptance_ls, trace_val
   
     all_theta_TVMAGI = vectorize(TVMAGI_xlatent_torch, TVMAGI_theta_torch, TVMAGI_sigma_torch, time_constant_param_ls)
     all_theta_pointwise = vectorize(pointwise_xlatent_torch, pointwise_theta_torch, TVMAGI_sigma_torch, time_constant_param_ls)
@@ -669,33 +670,43 @@ def TVMAGI_solver(use_data_idx, fOde=fOde, fOdeDx=fOdeDx, fOdeDtheta=fOdeDtheta,
                   lower_bound = torch.zeros(all_theta_pointwise.shape))
     # sampler.Nabla(all_theta)
     # lower_bound = torch.zeros(all_theta_pointwise.shape)
-    samples, b, c, d = sampler.sample(all_theta_TVMAGI, TV_theta_mean, ydata, CovAllDimensionsPyList, fOdeTorch, priorTemperature, KinvthetaList)
-    k = samples[8000:, 480:480+480]
-    xinit_ls = samples[8000:, :2]
-    constant_ls = samples[8000:, 962:964]
+    samples, b, trace = sampler.sample(all_theta_TVMAGI, TV_theta_mean, ydata, CovAllDimensionsPyList, fOdeTorch, priorTemperature, KinvthetaList)
+    k = samples[n_samples:, 480:480+480]
+    xinit_ls = samples[n_samples:, :2]
+    constant_ls = samples[n_samples:, 962:964]
     days= 20
     obs_per_day = 12
-    alpha_ls = np.zeros((8000, 240))
-    gamma_ls = np.zeros((8000, 240))
+    alpha_ls = np.zeros((n_samples, 240))
+    gamma_ls = np.zeros((n_samples, 240))
 
-    for i in range(4000):
+    for i in range(n_samples):
         val = np.zeros((240, 2))
         for j in range(240):
             val[j] = k[i].reshape(-1, 2)[j]
         alpha_ls[i] = val[:, 0]
         gamma_ls[i] = val[:, 1]
 
-
-
-
+    alpha_mean = np.mean(alpha_ls, axis=0)
+    alpha_max = np.percentile(alpha_ls, 97.5, axis=0)
+    alpha_min = np.percentile(alpha_ls, 2.5, axis=0)
+    gamma_mean = np.mean(gamma_ls, axis=0)
+    gamma_max = np.percentile(gamma_ls, 97.5, axis=0)
+    gamma_min = np.percentile(gamma_ls, 2.5, axis=0)
     mean_constant = np.mean(constant_ls, axis=0)
     mean_xinit = np.mean(xinit_ls, axis=0)
-    np.save('LV-alpha-ls-'+ str(use_data_idx) + '.npy', alpha_ls)
-    np.save('LV-gamma-ls-'+ str(use_data_idx) + '.npy', gamma_ls)
+    np.save('alpha-samples-' + str(use_data_idx) + '.npy', alpha_ls[:5000:100])
+    np.save('gamma-samples-' + str(use_data_idx) + '.npy', gamma_ls[:5000:100])
+    np.save('trace-' + str(use_data_idx) + '.npy', trace)
+    np.save('LV-alpha-min-'+ str(use_data_idx) + '.npy', alpha_min)
+    np.save('LV-alpha-max-'+ str(use_data_idx) + '.npy', alpha_max)
+    np.save('LV-alpha-mean-'+ str(use_data_idx) + '.npy', alpha_mean)
+    np.save('LV-gamma-min-'+ str(use_data_idx) + '.npy', gamma_min)
+    np.save('LV-gamma-max-'+ str(use_data_idx) + '.npy', gamma_max)
+    np.save('LV-gamma-mean-'+ str(use_data_idx) + '.npy', gamma_mean)
     np.save('LV-constant-mean-'+ str(use_data_idx) + '.npy', constant_ls)
     np.save('LV-xinit-mean-' + str(use_data_idx) + '.npy', mean_xinit)
     np.save('LV-TVMAGI-' + str(use_data_idx) + '.npy', TVMAGI_theta_torch.detach().numpy())
-    return samples, b, c, d
+    return samples, b, trace
 
 
 
