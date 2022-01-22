@@ -706,7 +706,7 @@ def TVMAGI_solver(use_data_idx, fOde=fOde, fOdeDx=fOdeDx, fOdeDtheta=fOdeDtheta,
     np.save('LV-constant-mean-'+ str(use_data_idx) + '.npy', constant_ls)
     np.save('LV-xinit-mean-' + str(use_data_idx) + '.npy', mean_xinit)
     np.save('LV-TVMAGI-' + str(use_data_idx) + '.npy', TVMAGI_theta_torch.detach().numpy())
-    return samples, b, trace
+    return trace
 
 
 
