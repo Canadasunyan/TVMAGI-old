@@ -457,7 +457,8 @@ def TVMAGI_solver(use_data_idx, fOde=fOde, fOdeDx=fOdeDx, fOdeDtheta=fOdeDtheta,
         loss.backward()
         TVMAGI_optimizer.step()
         lr_scheduler.step()
-        np.save('likelihood-' + str(use_data_idx) + '.npy', np.array([loss.item()]))
+    
+    np.save('likelihood-' + str(use_data_idx) + '.npy', np.array([loss.item()]))
 
   # HMC sampler ##############
     def vectorize(xlatent, theta, sigma, time_constant_param_ls):
