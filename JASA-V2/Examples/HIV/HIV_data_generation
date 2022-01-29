@@ -36,15 +36,13 @@ def gen_data(idx, true_lambda, true_rho, true_gamma, true_delta, days, obs_per_d
         np.random.seed(idx)
         yobs[:, 2] = states[:, 2] * np.random.normal(np.repeat(1., nobs), np.linspace(0.03, 0.03, nobs))
 
-    return yobs[:, 0], np.log(yobs[:, 2]), states
+    return yobs[:, 0], np.log(yobs[:, 2])
 
-
-Tt, yobs, true_x = gen_data(true_lambda, true_rho, true_gamma, true_delta, days, obs_per_day, noise=True)
 
 observations = np.zeros((100, 100, 2))
 for i in range(100):
     print(i)
-    Tt, yobs, _ = gen_data(i, true_lambda, true_rho, true_gamma, true_delta, days, obs_per_day, noise=True)
+    Tt, yobs = gen_data(i, true_lambda, true_rho, true_gamma, true_delta, days, obs_per_day, noise=True)
     observations[i][:, 0] = yobs
     observations[i][:, 1] = Tt
     
